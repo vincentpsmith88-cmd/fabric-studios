@@ -41,7 +41,8 @@ The `atelier` path is significant: Seamer's dependencies point to
 Set the Vercel Root Directory to `seamer-studio-main`. The checked-in
 root `.gitmodules` maps both Git dependencies, including the body-model used by
 `@seamer/avatar`; Vercel must fetch Git submodules. The `vercel.json` install
-command then installs Atelier and Seamer dependencies.
+command then installs Atelier and Seamer dependencies, and sets Vercel's output
+directory to `build`, the static adapter's generated site directory.
 
 ## Run locally
 

@@ -1,5 +1,6 @@
 {
   "installCommand": "pnpm --dir ../atelier install --frozen-lockfile --force && pnpm install --frozen-lockfile",
+  "outputDirectory": "build",
   "rewrites": [
     { "source": "/studios", "destination": "/404.html" },
     { "source": "/studios/((?!.*\\..*).*)", "destination": "/404.html" },
