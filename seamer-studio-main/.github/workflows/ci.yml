@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: seamer-studio
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: seamer-studio
+          submodules: recursive
+      - uses: actions/checkout@v4
+        with:
+          repository: ahzs645/atelier
+          path: atelier
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: seamer-studio/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: atelier
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: node vendor/body-model/test/body-model.test.mjs
+      - run: pnpm lint

@@ -1,0 +1,22 @@
+{
+  "name": "@seamer/avatar",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./assets": "./src/assets.ts"
+  },
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@seamer/body-model": "workspace:*",
+    "@seamer/pattern-model": "workspace:*",
+    "three": "0.181.2"
+  },
+  "devDependencies": {
+    "@types/three": "0.184.1"
+  }
+}

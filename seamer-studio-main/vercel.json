@@ -1,0 +1,7 @@
+{
+  "rewrites": [
+    { "source": "/studios", "destination": "/404.html" },
+    { "source": "/studios/((?!.*\\..*).*)", "destination": "/404.html" },
+    { "source": "/studios/:path*", "destination": "/:path*" }
+  ]
+}

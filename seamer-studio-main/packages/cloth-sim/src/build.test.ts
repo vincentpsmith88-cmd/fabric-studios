@@ -1,0 +1,466 @@
+// Pure-data tests for buildSimData: bend props buffer layout, seam-disabled bend constraints,
+// and index-paired seam linking (production parity). No WebGPU.
+
+import { describe, it, expect } from 'vitest';
+import { buildSimData, type ArrangedPiece } from './build';
+import {
+  stretchScaleToCompliance,
+  bendScaleToCompliance,
+  clampStretchAlpha,
+  clampBendAlpha,
+  DISABLED_COMPLIANCE,
+  SIM_CONFIG
+} from './config';
+import { createEmptyPattern, type Pattern, type Piece, type Material, type Seam } from '@seamer/pattern-model';
+import type { PieceCloth } from './geometry/boundary';
+import { attachGarmentCodeBody } from '@seamer/avatar';
+
+// ---------------------------------------------------------------------------------------------
+// Fixtures
+
+const MAT_ID = 'mat1';
+const WARP = 20;
+const WEFT = 40;
+const BEND = 30;
+
+function makeMaterial(): Material {
+  return {
+    id: MAT_ID,
+    name: 'Test',
+    stretchWarpValue: WARP,
+    stretchWeftValue: WEFT,
+    bendValue: BEND,
+    weight: 120
+  } as Material;
+}
+
+function makePiece(id: string, mainPathIds: string[]): Piece {
+  return {
+    id,
+    name: id,
+    type: 'dynamic',
+    materialId: MAT_ID,
+    grainVector: { x: 0, y: 1 },
+    leftPieces: 0,
+    rightPieces: 1,
+    mainPaths: mainPathIds.map((ppId) => ({
+      id: ppId,
+      name: '',
+      path: 'p',
+      from: 'a',
+      to: 'b',
+      reversed: false,
+      notches: [],
+      libraryUpdatedAt: null
+    })),
+    internalPaths: [],
+    settings3d: {
+      arrangement: null,
+      enable3d: true,
+      frozen: false,
+      flipNormals: false,
+      filterExternalCollisionsByClothNormal: false,
+      collisionLayer: 0,
+      savedPositions: []
+    }
+  } as unknown as Piece;
+}
+
+/** Unit-square quad (10mm), 4 particles, two triangles sharing the 0-2 diagonal: exactly one bend
+ *  constraint with opposite pair (1,3) and hinge pair (0,2). `chainKey` registers an ordered
+ *  boundary chain [0,1,2] for seam tests. */
+function quadCloth(pieceId: string, chainKey?: string): PieceCloth {
+  const edgeParticles = new Map<string, number[]>();
+  if (chainKey) edgeParticles.set(chainKey, [0, 1, 2]);
+  return {
+    pieceId,
+    materialId: MAT_ID,
+    mesh: {
+      points: [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 10, y: 10 },
+        { x: 0, y: 10 }
+      ],
+      triangles: [0, 1, 2, 0, 2, 3],
+      edges: [
+        [0, 1],
+        [1, 2],
+        [0, 2],
+        [2, 3],
+        [0, 3]
+      ],
+      boundary: [0, 1, 2, 3],
+      numBoundary: 4,
+      internal: []
+    },
+    edgeParticles,
+    particleDistanceMm: 10
+  };
+}
+
+function arrangedQuad(cloth: PieceCloth, positions3d: number[], extra: Partial<ArrangedPiece> = {}): ArrangedPiece {
+  return { cloth, positions3d: Float32Array.from(positions3d), frozen: false, fromSaved: false, ...extra };
+}
+
+function patternWith(pieces: Piece[], seams: Seam[] = []): Pattern {
+  const pattern = createEmptyPattern();
+  pattern.materials = [makeMaterial()];
+  pattern.pieces = pieces;
+  pattern.seams = seams;
+  return pattern;
+}
+
+const QUAD_POS_A = [0, 0, 0, 0.01, 0, 0, 0.01, 0.01, 0, 0, 0.01, 0]; // meters, flat in z=0
+// Piece B placed so its chain particles [0,1,2] are coincident with A's chain [0,1,2].
+const QUAD_POS_B_FORWARD = QUAD_POS_A.slice();
+// Piece B placed so its chain runs OPPOSITE A's: B0 ~ A2, B1 ~ A1, B2 ~ A0.
+const QUAD_POS_B_REVERSED = [0.01, 0.01, 0, 0.01, 0, 0, 0, 0, 0, 0, 0.01, 0];
+
+describe('SeamScape XPBD defaults', () => {
+  it('keeps the source frame, substep, gravity, velocity, and seam constants', () => {
+    expect(SIM_CONFIG).toMatchObject({
+      timeStep: 0.016,
+      subSteps: 40,
+      deltaT: 0.0004,
+      gravity: [0, -9.8, 0],
+      minVelocity: 0,
+      maxVelocity: 1,
+      seamStrength: 1,
+      handleSelfCollisions: true,
+      handleExternalCollisions: true
+    });
+  });
+});
+
+describe('collision triangle winding', () => {
+  it('reverses the inward render shell for source-compatible outward collision normals', () => {
+    const cloth = quadCloth('P1');
+    // Production boundary triangulation winds this square inward/clockwise. The render mesh keeps
+    // that order because its fabric face is BackSide, while collision normals must face outward.
+    cloth.mesh.triangles = [0, 2, 1, 0, 3, 2];
+    const sim = buildSimData(
+      patternWith([makePiece('P1', [])]),
+      [arrangedQuad(cloth, QUAD_POS_A)]
+    );
+
+    expect(sim.pieces[0].triangles.slice(0, 3)).toEqual([0, 2, 1]);
+    expect(Array.from(sim.triangles.slice(0, 4))).toEqual([0, 1, 2, 0]);
+    expect(sim.maxIncidentTrianglesPerParticle).toBe(12);
+    expect(sim.incidentTriangles).toHaveLength(sim.particleCount * 13);
+  });
+});
+
+function seamOf(fromId: string, toId: string, opts: { fromRev?: boolean; toRev?: boolean } = {}): Seam {
+  return {
+    id: 'seam1',
+    name: 'Seam',
+    fromPaths: [{ id: fromId, mirrored: false, reversed: opts.fromRev ?? false }],
+    toPaths: [{ id: toId, mirrored: false, reversed: opts.toRev ?? false }]
+  };
+}
+
+/** Flatten all bend color-group props into [edges, props] tuples per constraint. */
+function bendConstraints(sim: ReturnType<typeof buildSimData>) {
+  const out: { edge: number[]; props: number[] }[] = [];
+  for (const g of sim.bendColors) {
+    for (let i = 0; i < g.count; i++) {
+      out.push({
+        edge: Array.from(g.edges.slice(i * 4, i * 4 + 4)),
+        props: Array.from(g.props.slice(i * 4, i * 4 + 4))
+      });
+    }
+  }
+  return out;
+}
+
+function seamPartners(sim: ReturnType<typeof buildSimData>, particle: number): number[] {
+  return Array.from(sim.seams.slice(particle * 4, particle * 4 + 4)).filter((v) => v !== -1);
+}
+
+function sourceCutFixture() {
+  const band = makePiece('GC_Piece0', ['band-bottom']), skirt = makePiece('GC_Piece1', ['skirt-waist']);
+  band.name = 'wb_front'; skirt.name = 'skirt_front';
+  const placement = { worldMatrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], layoutOffsetMm: { x: 0, y: 0 } };
+  for (const piece of [band, skirt]) piece.settings3d.arrangement = { sourcePlacement: placement } as Piece['settings3d']['arrangement'];
+  const pattern = patternWith([band, skirt], [seamOf('band-bottom', 'skirt-waist')]);
+  pattern.garmentCodeSource = { format: 'garmentcode-json', unitsInMeter: 100, properties: {}, panelNames: ['wb_front', 'skirt_front'] };
+  pattern.body = attachGarmentCodeBody(pattern.body, { height: 170, head_l: 26.3262, waist_line: 36.8913, hips_line: 23.4837, waist: 84.3338, shoulder_w: 36.4568, shoulder_incl: 21.6777 });
+  pattern.materials[0].stretchWarpValue = 12;
+  pattern.materials[0].stretchWeftValue = 14;
+  // The dataset front waistband is451.98mm long and46.9674mm wide. Its skirt edge is
+  // deliberately longer: closing the join must retain each panel's own cut rest length.
+  const rectangular = (id: string, path: string, width: number) => {
+    const cloth = quadCloth(id);
+    cloth.mesh.points = [{ x: 0, y: 0 }, { x: width, y: 0 }, { x: width, y: 46.9674 }, { x: 0, y: 46.9674 }];
+    cloth.edgeParticles.set(path, [0, 1]);
+    return arrangedQuad(cloth, cloth.mesh.points.flatMap(p => [p.x / 1000, p.y / 1000, 0]));
+  };
+  return { pattern, arranged: [rectangular(band.id, 'band-bottom', 451.98), rectangular(skirt.id, 'skirt-waist', 550)] };
+}
+
+function stretchFor(sim: ReturnType<typeof buildSimData>, a: number, b: number) {
+  for (const group of sim.stretchColors) for (let i = 0; i < group.count; i++) {
+    const A = group.edges[i * 4], B = group.edges[i * 4 + 1];
+    if ((A === a && B === b) || (A === b && B === a)) return { rest: group.edges[i * 4 + 2], compliance: group.props[i * 4] };
+  }
+  throw new Error('Missing cut edge');
+}
+
+describe('source panel cut length at sewing boundaries', () => {
+  it('keeps the actual waistband rest edge and authored weft compliance while sewing a longer skirt', () => {
+    const { pattern, arranged } = sourceCutFixture(), sim = buildSimData(pattern, arranged);
+    expect(seamPartners(sim, 0)).not.toHaveLength(0);
+    expect(seamPartners(sim, 1)).not.toHaveLength(0);
+    expect(stretchFor(sim, 0, 1)).toEqual({ rest: Math.fround(.45198), compliance: Math.fround(stretchScaleToCompliance(14)) });
+    expect(stretchFor(sim, 4, 5)).toEqual({ rest: Math.fround(.55), compliance: Math.fround(stretchScaleToCompliance(14)) });
+    expect(sim.sourceStretchPolicy).toMatchObject({ policy: 'source-authored-seam-stretch-v1', retainedSeamStretchEdges: 2, legacySoftenedSeamStretchEdges: 0 });
+    // Fabric constraints connect particles inside one instance. Sewing links are separate.
+    for (const group of sim.stretchColors) for (let i = 0; i < group.count; i++) {
+      expect(group.edges[i * 4] < 4).toBe(group.edges[i * 4 + 1] < 4);
+    }
+  });
+
+  it('leaves native and inactive source boundaries at their exact legacy compliance', () => {
+    const native = sourceCutFixture(); delete native.pattern.garmentCodeSource;
+    const inactive = sourceCutFixture(); inactive.pattern.body.fields.height += 1;
+    for (const fixture of [native, inactive]) {
+      const sim = buildSimData(fixture.pattern, fixture.arranged);
+      expect(stretchFor(sim, 0, 1).compliance).toBe(DISABLED_COMPLIANCE);
+      expect(stretchFor(sim, 4, 5).compliance).toBe(DISABLED_COMPLIANCE);
+      expect(sim.sourceStretchPolicy).toBeUndefined();
+    }
+  });
+
+  it('preserves mixed native additions separately and does not depend on editable panel names', () => {
+    const { pattern, arranged } = sourceCutFixture();
+    pattern.pieces[0].name = 'Renamed waistband';
+    pattern.pieces[1].settings3d.arrangement = null as unknown as Piece['settings3d']['arrangement'];
+    const sim = buildSimData(pattern, arranged);
+    expect(stretchFor(sim, 0, 1).compliance).toBeCloseTo(stretchScaleToCompliance(14), 7);
+    expect(stretchFor(sim, 4, 5).compliance).toBe(DISABLED_COMPLIANCE);
+    expect(sim.sourceStretchPolicy).toMatchObject({ sourcePieceIds: ['GC_Piece0'], retainedSeamStretchEdges: 1, legacySoftenedSeamStretchEdges: 1 });
+  });
+
+  it('requires finite source placement and measured provenance, independent of contact thickness', () => {
+    const invalid = sourceCutFixture(); invalid.pattern.pieces[0].settings3d.arrangement.sourcePlacement!.worldMatrix[0] = NaN;
+    expect(stretchFor(buildSimData(invalid.pattern, invalid.arranged), 0, 1).compliance).toBe(DISABLED_COMPLIANCE);
+    const unmeasured = sourceCutFixture(); delete unmeasured.pattern.body.garmentCodeBody;
+    expect(stretchFor(buildSimData(unmeasured.pattern, unmeasured.arranged), 0, 1).compliance).toBe(DISABLED_COMPLIANCE);
+    const invalidUnits = sourceCutFixture(); invalidUnits.pattern.garmentCodeSource!.unitsInMeter = NaN;
+    expect(stretchFor(buildSimData(invalidUnits.pattern, invalidUnits.arranged), 0, 1).compliance).toBe(DISABLED_COMPLIANCE);
+    const material = sourceCutFixture(); material.pattern.materials[0].thickness = NaN;
+    expect(stretchFor(buildSimData(material.pattern, material.arranged), 0, 1).compliance).toBeCloseTo(stretchScaleToCompliance(14), 7);
+  });
+
+  it('keeps authored warp/blended interior stiffness and the existing bending policy', () => {
+    const { pattern, arranged } = sourceCutFixture();
+    const before = buildSimData(pattern, arranged);
+    delete pattern.garmentCodeSource;
+    const native = buildSimData(pattern, arranged);
+    expect(stretchFor(before, 1, 2)).toEqual(stretchFor(native, 1, 2));
+    expect(bendConstraints(before)).toEqual(bendConstraints(native));
+    expect(before.positions).toEqual(native.positions);
+    expect(before.triangles).toEqual(native.triangles);
+    expect(before.seams).toEqual(native.seams);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+
+describe('bend props buffer', () => {
+  it('stores the bend alpha in slot 1 and the material STRETCH alpha in slot 2 (beyond-rest)', () => {
+    const pattern = patternWith([makePiece('P1', ['eA'])]);
+    const sim = buildSimData(pattern, [arrangedQuad(quadCloth('P1'), QUAD_POS_A)]);
+
+    const bends = bendConstraints(sim);
+    expect(bends).toHaveLength(1);
+    const { props } = bends[0];
+
+    const expectedBend = clampBendAlpha(bendScaleToCompliance(BEND));
+    // Opposite pair is (1,3): direction (-10,10)/|.| -> |warp| == |weft| component, so the
+    // anisotropic stretch blend is the plain average of the warp/weft alphas.
+    const warpA = clampStretchAlpha(stretchScaleToCompliance(WARP));
+    const weftA = clampStretchAlpha(stretchScaleToCompliance(WEFT));
+    const expectedStretch = clampStretchAlpha((warpA + weftA) / 2);
+
+    expect(props[0]).toBeCloseTo(expectedBend, 5);
+    expect(props[1]).toBeCloseTo(expectedStretch, 5);
+    expect(props[1]).not.toBeCloseTo(props[0], 5); // the two slots must differ (bend != stretch alpha)
+    expect(props[2]).toBeCloseTo(Math.hypot(10, 10) / 1000, 6); // rest length (m) between (10,0) and (0,10)
+    expect(props[3]).toBe(0); // no fold line
+  });
+});
+
+describe('fold lines (foldAngle)', () => {
+  it('sets the dihedral target on bend constraints whose hinge lies along a foldAngle internal path', () => {
+    const piece = makePiece('P1', ['eA']);
+    piece.internalPaths = [{
+      id: 'fold1', name: '', path: 'p', from: 'a', to: 'b', reversed: false, notches: [],
+      libraryUpdatedAt: null, foldAngle: 90
+    } as unknown as Piece['internalPaths'][number]];
+    const cloth = quadCloth('P1');
+    cloth.edgeParticles.set('fold1', [0, 2]); // the quad's single bend hinge pair
+    const sim = buildSimData(patternWith([piece]), [arrangedQuad(cloth, QUAD_POS_A)]);
+
+    const bends = bendConstraints(sim);
+    expect(bends).toHaveLength(1);
+    expect(bends[0].props[3]).toBeCloseTo(Math.PI / 2, 6); // 90° -> rad in the targetAngle slot
+  });
+});
+
+describe('bend constraints across seams', () => {
+  it('disables a bend constraint whose HINGE pair are both seam particles (both slots + fold zeroed)', () => {
+    // Chains [0,1,2] include both hinge particles (0 and 2) of each quad; the opposite pair (1,3)
+    // is only half on the seam, so only the new hinge check can disable these constraints.
+    const pattern = patternWith(
+      [makePiece('P1', ['eA']), makePiece('P2', ['eB'])],
+      [seamOf('eA', 'eB')]
+    );
+    const sim = buildSimData(pattern, [
+      arrangedQuad(quadCloth('P1', 'eA'), QUAD_POS_A),
+      arrangedQuad(quadCloth('P2', 'eB'), QUAD_POS_B_FORWARD)
+    ]);
+
+    const bends = bendConstraints(sim);
+    expect(bends).toHaveLength(2); // one per quad
+    for (const { edge, props } of bends) {
+      // hinge pair (slots 3,4 of the edge vec4) must be seam particles; opposite pair must not both be
+      const [a, b, ha, hb] = edge;
+      expect(seamPartners(sim, ha).length).toBeGreaterThan(0);
+      expect(seamPartners(sim, hb).length).toBeGreaterThan(0);
+      const onSeam = (p: number) => seamPartners(sim, p).length > 0;
+      expect(onSeam(a) && onSeam(b)).toBe(false);
+      // disabled exactly like the opposite-pair branch: both compliance slots + angular term
+      expect(props[0]).toBe(DISABLED_COMPLIANCE);
+      expect(props[1]).toBe(DISABLED_COMPLIANCE);
+      expect(props[3]).toBe(0);
+    }
+  });
+
+  it('keeps material compliance when neither pair is fully on a seam', () => {
+    const pattern = patternWith([makePiece('P1', ['eA'])]);
+    const sim = buildSimData(pattern, [arrangedQuad(quadCloth('P1'), QUAD_POS_A)]);
+    const [{ props }] = bendConstraints(sim);
+    expect(props[0]).not.toBe(DISABLED_COMPLIANCE);
+    expect(props[1]).not.toBe(DISABLED_COMPLIANCE);
+  });
+});
+
+describe('seam linking', () => {
+  // Piece A occupies global particles 0..3, piece B 4..7. Chains: A [0,1,2], B [4,5,6].
+
+  it('links equal-count chains index-to-index for two aligned opposite edges', () => {
+    const pattern = patternWith(
+      [makePiece('P1', ['eA']), makePiece('P2', ['eB'])],
+      [seamOf('eA', 'eB')]
+    );
+    const sim = buildSimData(pattern, [
+      arrangedQuad(quadCloth('P1', 'eA'), QUAD_POS_A),
+      arrangedQuad(quadCloth('P2', 'eB'), QUAD_POS_B_FORWARD)
+    ]);
+    expect(seamPartners(sim, 0)).toEqual([4]);
+    expect(seamPartners(sim, 1)).toEqual([5]);
+    expect(seamPartners(sim, 2)).toEqual([6]);
+    expect(seamPartners(sim, 4)).toEqual([0]);
+    expect(seamPartners(sim, 6)).toEqual([2]);
+    expect(seamPartners(sim, 3)).toEqual([]); // off-seam particle untouched
+  });
+
+  it('handles reversed orientation via the auto-detect fallback when no ref carries direction', () => {
+    const pattern = patternWith(
+      [makePiece('P1', ['eA']), makePiece('P2', ['eB'])],
+      [seamOf('eA', 'eB')] // reversed: false everywhere -> data lacks orientation -> auto-detect
+    );
+    const sim = buildSimData(pattern, [
+      arrangedQuad(quadCloth('P1', 'eA'), QUAD_POS_A),
+      arrangedQuad(quadCloth('P2', 'eB'), QUAD_POS_B_REVERSED)
+    ]);
+    expect(seamPartners(sim, 0)).toEqual([6]);
+    expect(seamPartners(sim, 1)).toEqual([5]);
+    expect(seamPartners(sim, 2)).toEqual([4]);
+  });
+
+  it('trusts an explicit reversed flag over geometry (production index pairing, no auto-detect)', () => {
+    // Geometry is coincident FORWARD (A0~B0), but the data says the to-edge is reversed; the
+    // original links strictly by index over the (reversed) resampled chain, so we must too.
+    const pattern = patternWith(
+      [makePiece('P1', ['eA']), makePiece('P2', ['eB'])],
+      [seamOf('eA', 'eB', { toRev: true })]
+    );
+    const sim = buildSimData(pattern, [
+      arrangedQuad(quadCloth('P1', 'eA'), QUAD_POS_A),
+      arrangedQuad(quadCloth('P2', 'eB'), QUAD_POS_B_FORWARD)
+    ]);
+    expect(seamPartners(sim, 0)).toEqual([6]);
+    expect(seamPartners(sim, 1)).toEqual([5]);
+    expect(seamPartners(sim, 2)).toEqual([4]);
+  });
+
+  it.each([false, true])('preserves literal false/false interchange seam direction (cached=%s)', (cached) => {
+    const seam = seamOf('eA', 'eB');
+    seam.explicitOrientation = true;
+    const pattern = patternWith([makePiece('P1', ['eA']), makePiece('P2', ['eB'])], [seam]);
+    const sim = buildSimData(pattern, [
+      arrangedQuad(quadCloth('P1', 'eA'), QUAD_POS_A, { fromSaved: cached }),
+      arrangedQuad(quadCloth('P2', 'eB'), QUAD_POS_B_REVERSED, { fromSaved: cached })
+    ]);
+    // Nearest geometry would reverse B, but the source declares index-to-index stitching.
+    expect(seamPartners(sim, 0)).toEqual([4]);
+    expect(seamPartners(sim, 1)).toEqual([5]);
+    expect(seamPartners(sim, 2)).toEqual([6]);
+  });
+
+  it('uses cached drape coincidence to repair an explicit orientation invalidated by rebuilt edge order', () => {
+    const pattern = patternWith(
+      [makePiece('P1', ['eA']), makePiece('P2', ['eB'])],
+      [seamOf('eA', 'eB', { toRev: true })]
+    );
+    const sim = buildSimData(pattern, [
+      arrangedQuad(quadCloth('P1', 'eA'), QUAD_POS_A, { fromSaved: true }),
+      arrangedQuad(quadCloth('P2', 'eB'), QUAD_POS_B_FORWARD, { fromSaved: true })
+    ]);
+    expect(seamPartners(sim, 0)).toEqual([4]);
+    expect(seamPartners(sim, 1)).toEqual([5]);
+    expect(seamPartners(sim, 2)).toEqual([6]);
+  });
+
+  it('repairs explicit orientation after a mirrored legacy outline was flattened', () => {
+    const first = makePiece('P1', ['eA']);
+    const flattened = makePiece('P2', ['eB']);
+    flattened.legacyGeometry = {
+      format: 'seamscape-json',
+      boundary: [],
+      sewLines: [],
+      notches: []
+    };
+    const pattern = patternWith(
+      [first, flattened],
+      [seamOf('eA', 'eB', { toRev: true })]
+    );
+    const sim = buildSimData(pattern, [
+      arrangedQuad(quadCloth('P1', 'eA'), QUAD_POS_A),
+      arrangedQuad(quadCloth('P2', 'eB'), QUAD_POS_B_FORWARD)
+    ]);
+
+    expect(seamPartners(sim, 0)).toEqual([4]);
+    expect(seamPartners(sim, 1)).toEqual([5]);
+    expect(seamPartners(sim, 2)).toEqual([6]);
+  });
+
+  it('proximity sewing is OFF by default (source parity) and opt-in via options', () => {
+    // Two saved-drape pieces with coincident boundaries but NO seam definitions.
+    const mk = () => [
+      arrangedQuad(quadCloth('P1'), QUAD_POS_A, { fromSaved: true, boundaryLocal: [0, 1, 2, 3] }),
+      arrangedQuad(quadCloth('P2'), QUAD_POS_B_FORWARD, { fromSaved: true, boundaryLocal: [0, 1, 2, 3] })
+    ];
+    const pattern = patternWith([makePiece('P1', ['eA']), makePiece('P2', ['eB'])]);
+
+    const simOff = buildSimData(pattern, mk());
+    expect(Array.from(simOff.seams).every((v) => v === -1)).toBe(true);
+
+    const simOn = buildSimData(pattern, mk(), { proximitySeams: true });
+    expect(seamPartners(simOn, 0)).toEqual([4]);
+    expect(seamPartners(simOn, 3)).toEqual([7]);
+  });
+});
