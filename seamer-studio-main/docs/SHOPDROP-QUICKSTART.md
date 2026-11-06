@@ -36,6 +36,13 @@ The exact repository branch/commit should be pinned before a production release.
 The `atelier` path is significant: Seamer's dependencies point to
 `../atelier/packages/...`.
 
+## Deploy to Vercel
+
+Set the Vercel Root Directory to `seamer-studio-main`. The checked-in
+`vercel.json` installs the sibling Atelier checkout before installing Seamer;
+do not override its install command with one that assumes `../atelier` already
+exists.
+
 ## Run locally
 
 ```bash
