@@ -36,6 +36,10 @@
   </main>
   {#if !isStudio}
     <footer class="footer footer-center p-10 bg-base-200 text-base-content rounded">
+      <a href="{base}/studio" class="flex items-center gap-2 font-lexend font-semibold text-lg">
+        <img src="{base}/images/fabric-now-logo.png" alt="" class="h-8 w-8 object-contain" />
+        <span>Fabric Now Studios</span>
+      </a>
       <nav class="grid grid-flow-col gap-4">
         <a href="{base}/about" class="link link-hover">About</a>
         <a href="{base}/software" class="link link-hover">Software</a>
@@ -50,7 +54,7 @@
         <a href="{base}/terms" class="link link-hover">Terms</a>
       </nav>
       <aside>
-        <p>&copy; {new Date().getFullYear()} Seamer. All rights reserved.</p>
+        <p>&copy; {new Date().getFullYear()} Fabric Now Studios. All rights reserved.</p>
       </aside>
     </footer>
   {/if}

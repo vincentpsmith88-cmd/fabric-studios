@@ -40,8 +40,9 @@
     </div>
 
     <div class="flex-1 lg:flex-initial text-center lg:text-left flex items-center">
-      <a href="{base}/" class="btn btn-ghost text-xl logo">
-        <span class="font-lexend font-semibold text-lg">Seamer</span>
+      <a href="{base}/studio" class="btn btn-ghost text-xl logo gap-2">
+        <img src="{base}/images/fabric-now-logo.png" alt="" class="h-9 w-9 object-contain" />
+        <span class="font-lexend font-semibold text-base sm:text-lg">Fabric Now Studios</span>
       </a>
     </div>
 
@@ -57,7 +58,7 @@
 
     <div class="flex-initial flex items-center gap-2 pr-2">
       <ThemeToggle />
-      <a href="{base}/studio" class="btn btn-accent btn-sm">Open Studio</a>
+      <a href="{base}/studio" class="btn btn-accent btn-sm">Open Studios</a>
     </div>
   </div>
 </div>

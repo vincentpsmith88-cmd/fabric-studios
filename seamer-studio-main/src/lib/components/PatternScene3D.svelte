@@ -31,17 +31,28 @@
   import { toast, toastError, toastSuccess } from '$lib/stores/toast';
   import { confirm } from '$lib/stores/confirm';
 
-  // lightweight FPS meter for the optional stats overlay (Settings → 3D stats)
+  // Keep the optional FPS meter dormant unless its overlay is visible.
   let fps = $state(0);
-  onMount(() => {
-    let raf = 0, frames = 0, last = performance.now();
-    const tick = () => {
+  $effect(() => {
+    if (!$show3dStats) {
+      fps = 0;
+      return;
+    }
+
+    let raf = 0;
+    let frames = 0;
+    let last = performance.now();
+    const measure = () => {
       frames++;
       const now = performance.now();
-      if (now - last >= 500) { fps = Math.round((frames * 1000) / (now - last)); frames = 0; last = now; }
-      raf = requestAnimationFrame(tick);
+      if (now - last >= 500) {
+        fps = Math.round((frames * 1000) / (now - last));
+        frames = 0;
+        last = now;
+      }
+      raf = requestAnimationFrame(measure);
     };
-    raf = requestAnimationFrame(tick);
+    raf = requestAnimationFrame(measure);
     return () => cancelAnimationFrame(raf);
   });
 

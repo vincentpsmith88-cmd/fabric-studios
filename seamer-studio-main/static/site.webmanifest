@@ -1,25 +1,19 @@
 {
-  "name": "Seamer Pattern Studio",
-  "short_name": "Seamer",
-  "description": "Professional pattern design studio",
+  "name": "Fabric Now Studios",
+  "short_name": "Fabric Now",
+  "description": "Fabric Now Studios — professional pattern design and 3D garment simulation.",
   "start_url": "/studio",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "theme_color": "#ffffff",
+  "theme_color": "#f05139",
   "background_color": "#ffffff",
   "icons": [
     {
-      "src": "/android-chrome-192x192.png",
-      "sizes": "192x192",
+      "src": "/images/fabric-now-logo.png",
+      "sizes": "any",
       "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/android-chrome-512x512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ]
 }

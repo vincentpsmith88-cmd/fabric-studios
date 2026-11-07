@@ -1356,8 +1356,10 @@
 <div class="studio-shell flex flex-col h-screen overflow-hidden" inert={documentLoading} aria-busy={documentLoading} data-testid="studio-workspace">
   <div inert={frozenDiagnosticActive} class="studio-topbar flex items-center justify-between px-3 py-1.5 bg-base-200 border-b shrink-0">
     <div class="studio-home flex items-center gap-2">
-      <a href="{base}/" class="btn btn-ghost btn-xs" aria-label="Back to patterns">&larr;</a>
-      <span class="text-sm font-lexend font-semibold hidden lg:inline">Pattern Studio</span>
+      <a href="{base}/studio" class="flex items-center gap-2 rounded px-1 py-0.5" aria-label="Fabric Now Studios">
+        <img src="{base}/images/fabric-now-logo.png" alt="" class="h-7 w-7 object-contain" />
+        <span class="text-sm font-lexend font-semibold hidden lg:inline">Fabric Now Studios</span>
+      </a>
     </div>
     <div class="studio-document flex items-center gap-2">
       <input disabled={mutationDisabled} type="text" aria-label="Pattern name" class="input input-bordered input-xs w-40 lg:w-56" placeholder="Pattern name..." bind:value={patternName}

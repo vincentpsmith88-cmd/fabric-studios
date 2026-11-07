@@ -2028,16 +2028,34 @@ export class PatternRenderer {
       const current = () => ({ prepared: this.prepared, sceneRevision: this.sourceSceneGeneration,
         bodyRevision: this.sourceBodyInitializationRevision, resetRevision: this.simulationResetRevision, requestRevision: this.sourcePreparationRequestRevision,
           pattern: this.pattern, avatar: this.avatar, disposed: this.disposed });
+      await this.activeSimulationStep?.catch(() => undefined);
+      if (!preparationStillCurrent(token, current())) return null;
+      if (this.sim) return this.sim;
       if (!this.device) {
         this.device = await requestDevice();
         if (this.device) {
           const acquiredDevice = this.device;
           this.deviceLostReason = null;
           void acquiredDevice.lost.then((info) => {
-            if (this.device !== acquiredDevice) return;
-            this.deviceLostReason = info.message
+            if (this.device !== acquiredDevice || this.disposed) return;
+            const reason = info.message
               ? `${info.reason}: ${info.message}`
               : info.reason;
+            this.deviceLostReason = reason;
+            this.device = null;
+            this.simRunner?.stop();
+            this.simRunner?.dispose();
+            this.simRunner = null;
+            this.disposeSimFrame?.();
+            this.disposeSimFrame = null;
+            this.sim?.dispose();
+            this.sim = null;
+            this.simulating = false;
+            this.userSimulating = false;
+            this.releaseSimulationLease?.();
+            this.releaseSimulationLease = null;
+            this.simulationFailure = `WebGPU device was lost (${reason}). Start the simulation again to reconnect.`;
+            this.onStatus('error', this.simulationFailure);
           });
         }
       }

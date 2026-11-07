@@ -3,7 +3,7 @@
 </script>
 
 <svelte:head>
-  <title>Pattern Studio — Seamer</title>
+  <title>Fabric Now Studios — Pattern Studio</title>
 </svelte:head>
 
 <div class="px-4 py-8 max-w-4xl mx-auto">
