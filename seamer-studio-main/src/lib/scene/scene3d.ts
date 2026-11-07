@@ -1100,6 +1100,14 @@ export class PatternRenderer {
     return true;
   }
 
+  /** Explicitly frame the complete avatar and garment in the usable 3D viewport. */
+  fitAvatarAndGarment(): boolean {
+    if (!this.fitSourceView(this.camera.fov, false)) return false;
+    this.beginUserCameraChange();
+    this.queueCameraSave();
+    return true;
+  }
+
   private fitSourceView(fov = this.camera.fov, garmentOnly = false): boolean {
     if (!this.prepared?.collisionSafety || !this.avatar) return false;
     const bounds = this.container.getBoundingClientRect();

@@ -835,17 +835,29 @@
   onMount(() => {
     mounted = true;
     ctx = canvasEl.getContext('2d');
-    const observer = new ResizeObserver(() => {
+    const syncCanvasSize = () => {
       const nextW = Math.max(1, Math.round(canvasEl.clientWidth));
       const nextH = Math.max(1, Math.round(canvasEl.clientHeight));
-      if (nextW === canvasW && nextH === canvasH) return;
-      canvasW = nextW;
-      canvasH = nextH;
-      canvasEl.width = canvasW;
-      canvasEl.height = canvasH;
+      const changed = nextW !== canvasW || nextH !== canvasH
+        || canvasEl.width !== nextW || canvasEl.height !== nextH;
+      if (changed) {
+        canvasW = nextW;
+        canvasH = nextH;
+        canvasEl.width = nextW;
+        canvasEl.height = nextH;
+      }
+      return changed;
+    };
+    // The pattern effect can run before this canvas has a real DOM size and context. In that
+    // case it records the document as fitted but cannot paint the fit. Always perform one real
+    // initial fit after mount, even when the measured size happens to equal the 800x600 defaults.
+    syncCanvasSize();
+    if (currentPattern.points.length > 0 || currentPattern.pieces.length > 0) fitView();
+    else render();
+    const observer = new ResizeObserver(() => {
+      if (!syncCanvasSize()) return;
       // Split/2D mode and the inspector change the available canvas after the pattern effect has
-      // already run. Refit to the final viewport, like the legacy Studio, instead of retaining the
-      // zoom calculated for the narrow initial column.
+      // already run. Refit to the final viewport instead of retaining the narrow initial zoom.
       if (currentPattern.points.length > 0 || currentPattern.pieces.length > 0) fitView();
       else render();
     });

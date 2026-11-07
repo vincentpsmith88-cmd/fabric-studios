@@ -719,6 +719,7 @@
   // live-apply the "Show seams (3D)" toggle from the Properties panel
   $effect(() => { const on = currentPattern.settings3d.showSeams ?? false; renderer?.setShowSeams(on); });
   function zoomToGarment() { renderer?.zoomToGarment(); }
+  function fitAvatarAndGarment() { renderer?.fitAvatarAndGarment(); }
   function setView(v: 'front' | 'back' | 'left' | 'right' | 'top' | 'reset') { renderer?.setCameraView(v); }
   function exportSource() {
     if (!renderer || !sourceExportReady) { toastError('Wait for the current 3D garment to finish preparing.'); return null; }
@@ -1239,6 +1240,9 @@
         <span class="material-symbols-rounded text-sm" aria-hidden="true">zoom_in</span>
       </button>
     {/if}
+    <button class="join-item btn btn-xs" title="Fit avatar and garment" aria-label="Fit avatar and garment" onclick={fitAvatarAndGarment}>
+      <span class="material-symbols-rounded text-sm" aria-hidden="true">fit_screen</span>
+    </button>
     <button class="join-item btn btn-xs" title="Reset view" onclick={() => setView('reset')} aria-label="Reset view"><span class="material-symbols-rounded text-sm">refresh</span></button>
   </div>
 
