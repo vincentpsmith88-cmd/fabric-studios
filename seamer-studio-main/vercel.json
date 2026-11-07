@@ -1,5 +1,5 @@
 {
-  "installCommand": "pnpm --dir ../atelier install --frozen-lockfile --force && pnpm install --frozen-lockfile",
+  "installCommand": "pnpm --config.fetch-retries=5 --config.fetch-timeout=120000 --dir ../atelier install --frozen-lockfile --network-concurrency=8 && pnpm --config.fetch-retries=5 --config.fetch-timeout=120000 install --frozen-lockfile --network-concurrency=8",
   "outputDirectory": "build",
   "rewrites": [
     { "source": "/studios", "destination": "/404.html" },
