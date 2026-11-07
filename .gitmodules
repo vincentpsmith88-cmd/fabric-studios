@@ -1,6 +1,6 @@
 [submodule "atelier"]
 	path = atelier
-	url = https://github.com/ahzs645/atelier.git
+	url = https://github.com/vincentpsmith88-cmd/atelier.git
 [submodule "seamer-studio-main/vendor/body-model"]
 	path = seamer-studio-main/vendor/body-model
 	url = https://github.com/ahzs645/body-model.git
