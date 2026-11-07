@@ -16,7 +16,7 @@
   let mobileMenuOpen = $state(false);
 </script>
 
-<div class="topNav sticky bg-base-100/50 top-0 z-[100] border-b-2 border-accent overflow-visible backdrop-blur-md">
+<div class="topNav sticky bg-base-100 top-0 z-[100] border-b border-base-300 overflow-visible">
   <div class="max-w-screen-2xl mx-auto px-0 lg:px-10 flex flex-row items-stretch overflow-visible">
     <div class="flex-initial lg:hidden">
       <button
@@ -38,6 +38,13 @@
         {/each}
       </ul>
     </div>
+
+    <style>
+      .topNav { box-shadow: 0 2px 12px rgb(15 23 42 / 0.045); }
+      .topNav :global(.menu a) { border-radius: 0.65rem; }
+      .topNav :global(.menu a.active) { color: oklch(var(--p)); background: oklch(var(--p) / 0.08); }
+      .topNav :global(.logo:hover) { background: oklch(var(--b2)); }
+    </style>
 
     <div class="flex-1 lg:flex-initial text-center lg:text-left flex items-center">
       <a href="{base}/studio" class="btn btn-ghost text-xl logo gap-2">

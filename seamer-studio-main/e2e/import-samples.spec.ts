@@ -10,7 +10,10 @@ test.beforeEach(async ({ page }) => {
 
 async function openStudio(page: Page) {
 	await page.goto('/studio', { waitUntil: 'domcontentloaded' });
-	const patternName = page.getByTestId('pattern-name-input');
+	const patternName = page.getByRole('textbox', { name: 'Pattern name' });
+	await expect(patternName).toHaveValue('New Pattern');
+	await page.getByRole('button', { name: 'Library', exact: true }).click();
+	await page.getByRole('button', { name: /Pencil skirt - 3D/ }).click();
 	await expect(patternName).toBeVisible();
 	await expect(patternName).toHaveValue('Pencil skirt - 3D');
 }
@@ -19,6 +22,13 @@ async function importSample(page: Page, file: string) {
 	await page.getByTestId('import-menu-trigger').click();
 	await page.getByTestId(`import-sample-${file}`).click();
 }
+
+test('opens with a blank pattern instead of loading a template', async ({ page }) => {
+	await page.goto('/studio', { waitUntil: 'domcontentloaded' });
+	await expect(page.getByRole('textbox', { name: 'Pattern name' })).toHaveValue('New Pattern');
+	await expect(page.getByText('P:0 · Paths:0 · Pieces:0 · Seams:0')).toBeVisible();
+	await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+});
 
 test.describe('Import samples', () => {
 	test('studio loads and pattern name input is present', async ({ page }) => {
@@ -97,8 +107,39 @@ test.describe('Import samples', () => {
 		});
 	}
 
-	test('an import becomes the active unsaved document and survives save/reload', async ({ page }) => {
+	test('combines multiple SVG uploads into separately placed 3D pieces', async ({ page }) => {
 		await page.goto('/studio', { waitUntil: 'domcontentloaded' });
+		await expect(page.getByRole('textbox', { name: 'Pattern name' })).toHaveValue('New Pattern');
+		await page.getByRole('button', { name: 'Import', exact: true }).click();
+		const fileChooserPromise = page.waitForEvent('filechooser');
+		await page.getByRole('button', { name: /SVG pattern pieces/ }).click();
+		const fileChooser = await fileChooserPromise;
+		expect(fileChooser.isMultiple()).toBe(true);
+		await fileChooser.setFiles([
+			{ name: 'front.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="50mm" height="40mm" viewBox="0 0 50 40"><path d="M0 0 H50 V40 H0 Z"/></svg>') },
+			{ name: 'back.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="45mm" height="30mm" viewBox="0 0 45 30"><path d="M0 0 H45 V30 H0 Z"/></svg>') }
+		]);
+
+		await expect(page.getByRole('heading', { name: 'Combine SVG pattern pieces' })).toBeVisible();
+		await page.getByRole('dialog').getByRole('button', { name: 'Import', exact: true }).click();
+		await expect(page.getByRole('textbox', { name: 'Pattern name' })).toHaveValue('Combined SVG garment');
+		await expect(page.getByText('Imported "Combined SVG garment"')).toBeVisible();
+		const result = await page.evaluate(() => {
+			const pattern = window.seamer!.getPattern();
+			return {
+				pieces: pattern.pieces.map(piece => piece.name),
+				minXs: pattern.pieces.map(piece => Math.min(...piece.mainPaths.flatMap(edge =>
+					edge.path ? pattern.paths.find(path => path.id === edge.path)?.pathPoints.map(point =>
+						pattern.points.find(candidate => candidate.id === point.id)?.x ?? 0) ?? [] : []
+				)))
+			};
+		});
+		expect(result.pieces).toEqual(['front: Piece 1', 'back: Piece 1']);
+		expect(result.minXs[1]).toBeGreaterThan(result.minXs[0] + 50);
+	});
+
+	test('an import becomes the active unsaved document and survives save/reload', async ({ page }) => {
+		await openStudio(page);
 		const patternName = page.getByTestId('pattern-name-input');
 		await expect(patternName).toHaveValue('Pencil skirt - 3D');
 		await page.getByRole('button', { name: 'Import', exact: true }).click();

@@ -1,9 +1,10 @@
 <script lang="ts">
   import type { SvgImportOptions } from '@seamer/pattern-model/utils/patternImport';
 
-  let { filename = '', onapply, oncancel }:
+  let { filename = '', filenames = [], onapply, oncancel }:
     {
       filename?: string;
+      filenames?: string[];
       onapply: (options: SvgImportOptions) => void;
       oncancel: () => void;
     } = $props();
@@ -29,8 +30,12 @@
 
 <div class="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
   <div class="bg-base-100 rounded-lg shadow-xl max-w-md w-full p-5">
-    <h3 class="font-bold text-base mb-1">Import SVG</h3>
-    {#if filename}<p class="text-xs opacity-60 mb-3 truncate">{filename}</p>{/if}
+    <h3 class="font-bold text-base mb-1">{filenames.length > 1 ? 'Combine SVG pattern pieces' : 'Import SVG'}</h3>
+    {#if filenames.length > 1}
+      <p class="text-xs opacity-60 mb-3">{filenames.length} files selected: {filenames.join(', ')}</p>
+    {:else if filenames.length === 1}
+      <p class="text-xs opacity-60 mb-3 truncate">{filenames[0]}</p>
+    {:else if filename}<p class="text-xs opacity-60 mb-3 truncate">{filename}</p>{/if}
 
     <label class="form-control w-full mb-3">
       <div class="label py-1"><span class="label-text">SVG units</span></div>
@@ -74,6 +79,11 @@
     <p class="text-xs opacity-50 mb-4">
       Lines are classified by their data-layer or id: cut/boundary/outline, seam/stitch, or internal/fold/dart. Closed shapes default to cut lines.
     </p>
+    {#if filenames.length > 1}
+      <p class="text-xs opacity-70 mb-4">
+        Each file stays as a separate piece and is placed beside the others. Create seam connections in the Seams panel before draping the assembled garment in 3D.
+      </p>
+    {/if}
 
     <div class="flex justify-end gap-2">
       <button class="btn btn-sm btn-ghost" onclick={oncancel}>Cancel</button>

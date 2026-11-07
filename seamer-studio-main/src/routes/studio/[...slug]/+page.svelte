@@ -112,14 +112,15 @@
   import { createDocumentOperationGuard } from '$lib/utils/documentOperationGuard';
   import { syncLinkedMirrorPlacements } from '$lib/utils/linkedMirror';
   import { draftingFingerprint, synchronizeLinkedDraft } from '$lib/utils/draftingSync';
+  import { combineSvgPatterns } from '$lib/utils/combineSvgPatterns';
 
   let showCommandPalette = $state(false);
   let showBugReport = $state(false);
   let showPrintDialog = $state(false);
   /** pending .dxf file text + name while the DXF import options dialog is open */
   let dxfPending = $state<{ text: string; name: string } | null>(null);
-  /** pending .svg file text + name while the SVG import options dialog is open */
-  let svgPending = $state<{ text: string; name: string } | null>(null);
+  /** pending SVG files while the shared import options dialog is open */
+  let svgPending = $state<{ files: { text: string; name: string }[] } | null>(null);
   /** RUL grade-rule dialog: table parsed from a picked .rul file, or null for "pick a file" mode */
   let rulDialog = $state<{ table: RulTable | null } | null>(null);
   let showCuttingRoom = $state(false);
@@ -340,10 +341,10 @@
   }
 
   const sidebarTabs = [
-    { id: 'layers', label: 'Layers' }, { id: 'body', label: 'Body' },
-    { id: 'materials', label: 'Fabric' }, { id: 'seams', label: 'Seams' },
-    { id: 'colorways', label: 'Colorways' }, { id: 'artwork', label: 'Artwork' },
-    { id: 'collection', label: 'Collection' }
+    { id: 'layers', label: 'Layers', icon: 'layers' }, { id: 'body', label: 'Body', icon: 'accessibility_new' },
+    { id: 'materials', label: 'Fabric', icon: 'texture' }, { id: 'seams', label: 'Seams', icon: 'linear_scale' },
+    { id: 'colorways', label: 'Colorways', icon: 'palette' }, { id: 'artwork', label: 'Artwork', icon: 'draw' },
+    { id: 'collection', label: 'Collection', icon: 'collections_bookmark' }
   ] as const;
 
   function handleWorkspaceLayout(layout: WorkspaceLayout) {
@@ -491,8 +492,6 @@
   const templatePatterns = Object.fromEntries(
     [...referenceSspTemplates, ...draftingTemplates].map((template) => [template.key, template])
   ) as Record<string, { name: string; description: string; file: string }>;
-  const DEFAULT_STUDIO_TEMPLATE = 'pencil-skirt';
-
   let autoSaveTimer: ReturnType<typeof setInterval>;
 
   // Command-bus host: the unified command layer commits through the same undo-aware update path the
@@ -542,7 +541,19 @@
           toastError('Pattern not found');
         }
       } else {
-        await loadTemplate(DEFAULT_STUDIO_TEMPLATE);
+        const blank = {
+          ...structuredClone(EMPTY_PATTERN),
+          id: crypto.randomUUID(),
+          versionId: crypto.randomUUID(),
+          name: 'New Pattern',
+          viewMode: 'both' as const
+        };
+        currentPattern = blank;
+        patternName = blank.name;
+        restoreWorkspace(blank);
+        pattern.set(blank);
+        saved = true;
+        await restoreHistory(blank.id);
       }
     })().catch((error) => { toastError(error instanceof Error ? error.message : 'Could not open the document.'); }).finally(() => { documentLoading = false; });
 
@@ -893,7 +904,7 @@
         const text = await file.text();
         const name = file.name.replace(/\.(dxf|svg|cut|val|sm2d|xml|json|rul|seamer\.json)$/i, '');
         if (ext === 'dxf') { dxfPending = { text, name }; return; } // import options dialog first
-        if (ext === 'svg') { svgPending = { text, name }; return; } // import options dialog first
+        if (ext === 'svg') { svgPending = { files: [{ text, name }] }; return; } // import options dialog first
         if (ext === 'rul') { rulDialog = { table: parseRul(text) }; return; } // pick a size, then apply
         let imported:Pattern|null=await parseImport(text, ext, name),explicitGatherImport=false;
         if(!['dxf','svg','cut','val','sm2d','xml'].includes(ext??'')) {
@@ -957,11 +968,22 @@
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = accepts[kind];
+    if (kind === 'svg') input.multiple = true;
     input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) return;
+      const files = Array.from(input.files ?? []);
+      if (files.length === 0) return;
+      const file = files[0]!;
       const name = file.name.replace(/\.(json|val|sm2d|xml|cut|plt|hpgl|hp|svg|dxf)$/i, '');
       try {
+        if (kind === 'svg' && files.length > 1) {
+          svgPending = {
+            files: await Promise.all(files.map(async svgFile => ({
+              name: svgFile.name.replace(/\.svg$/i, ''),
+              text: await svgFile.text()
+            })))
+          };
+          return;
+        }
         if (kind === 'image') {
           const url = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
@@ -999,7 +1021,7 @@
           return;
         }
         if (kind === 'dxf') { dxfPending = { text, name }; return; }
-        if (kind === 'svg') { svgPending = { text, name }; return; }
+        if (kind === 'svg') { svgPending = { files: [{ text, name }] }; return; }
         if (kind === 'cut') { await applyImported(cutToPattern(text, name)); return; }
         if (kind === 'seamly') { await applyImported(seamlyToPattern(text, name)); return; }
 
@@ -1084,7 +1106,11 @@
   async function importSvgWithOptions(options: SvgImportOptions) {
     if (!svgPending) return;
     try {
-      await applyImported(svgToPattern(svgPending.text, svgPending.name, options));
+      const imported = svgPending.files.map(file => ({
+        name: file.name,
+        pattern: svgToPattern(file.text, file.name, options)
+      }));
+      await applyImported(combineSvgPatterns(imported));
     } catch (err) { toastError((err as Error)?.message || 'Could not import file'); }
     svgPending = null;
   }
@@ -1354,7 +1380,7 @@
 {/snippet}
 
 <div class="studio-shell flex flex-col h-screen overflow-hidden" inert={documentLoading} aria-busy={documentLoading} data-testid="studio-workspace">
-  <div inert={frozenDiagnosticActive} class="studio-topbar flex items-center justify-between px-3 py-1.5 bg-base-200 border-b shrink-0">
+  <div inert={frozenDiagnosticActive} class="studio-topbar flex items-center justify-between px-3 py-1.5 bg-base-100 border-b shrink-0">
     <div class="studio-home flex items-center gap-2">
       <a href="{base}/studio" class="flex items-center gap-2 rounded px-1 py-0.5" aria-label="Fabric Now Studios">
         <img src="{base}/images/fabric-now-logo.png" alt="" class="h-7 w-7 object-contain" />
@@ -1395,7 +1421,7 @@
           <li><button onclick={() => handleSourceImport('seamly')}>Seamly… <span class="text-xs opacity-50">Experimental</span></button></li>
           <li><button onclick={() => handleSourceImport('cut')}>CUT (plot)…</button></li>
           <li><button onclick={() => handleSourceImport('hpgl')}>PLT / HPGL… <span class="text-xs opacity-50">Beta</span></button></li>
-          <li><button onclick={() => handleSourceImport('svg')}>SVG…</button></li>
+          <li><button onclick={() => handleSourceImport('svg')}>SVG pattern pieces…</button></li>
           <li><button onclick={() => handleSourceImport('dxf')}>DXF…</button></li>
           <li><button onclick={() => handleSourceImport('raw-json')}>Raw JSON (SeamScape)…</button></li>
           <li class="menu-title pt-2">Seamer</li>
@@ -1498,8 +1524,8 @@
       <button class="studio-panel-backdrop" aria-label="Close panel" tabindex="-1" onclick={() => closeWorkspacePanel()}></button>
     {/if}
     {#if showLeftPanel || mobilePanel === 'left'}
-      <aside inert={frozenDiagnosticActive} id="studio-left-panel" bind:this={leftPanelElement} class="studio-left-panel w-56 border-r bg-base-100 flex flex-col shrink-0 overflow-hidden" class:mobile-open={mobilePanel === 'left'} role={narrowWorkspace ? 'dialog' : undefined} aria-modal={narrowWorkspace && mobilePanel === 'left' ? true : undefined} aria-label="Layers, body, fabric and seams" data-tour-id="tour-left-panel">
-        <div class="studio-drawer-header border-b px-2 bg-base-200">
+      <aside inert={frozenDiagnosticActive} id="studio-left-panel" bind:this={leftPanelElement} class="studio-left-panel w-64 border-r bg-base-100 flex flex-col shrink-0 overflow-hidden" class:mobile-open={mobilePanel === 'left'} role={narrowWorkspace ? 'dialog' : undefined} aria-modal={narrowWorkspace && mobilePanel === 'left' ? true : undefined} aria-label="Layers, body, fabric and seams" data-tour-id="tour-left-panel">
+        <div class="studio-drawer-header border-b px-2 bg-base-100">
           <span class="font-semibold text-sm">Pattern panels</span>
           <button class="btn btn-ghost btn-xs" aria-label="Close pattern panels" onclick={() => closeWorkspacePanel('left')}>✕</button>
         </div>
@@ -1589,7 +1615,7 @@
 />
 {#if showPrintDialog}<PrintDialog pattern={currentPattern} {patternName} onclose={() => (showPrintDialog = false)} />{/if}
 {#if dxfPending}<DxfImportDialog filename={dxfPending.name} onapply={importDxfWithOptions} oncancel={() => (dxfPending = null)} />{/if}
-{#if svgPending}<SvgImportDialog filename={svgPending.name} onapply={importSvgWithOptions} oncancel={() => (svgPending = null)} />{/if}
+{#if svgPending}<SvgImportDialog filenames={svgPending.files.map(file => file.name)} onapply={importSvgWithOptions} oncancel={() => (svgPending = null)} />{/if}
 {#if rulDialog}<SizesDialog table={rulDialog.table} onapply={applyRul} oncancel={() => (rulDialog = null)} />{/if}
 
 <Toaster />
@@ -1612,6 +1638,10 @@
 <style>
   .studio-shell { height: 100dvh; min-width: 0; }
   .studio-topbar { gap: 0.5rem; flex-wrap: wrap; }
+  .studio-topbar { box-shadow: 0 1px 5px rgb(15 23 42 / 0.06); border-color: oklch(var(--bc) / 0.1); }
+  .studio-topbar .studio-home img { filter: drop-shadow(0 1px 2px rgb(15 23 42 / 0.14)); }
+  .studio-left-panel { width: 16rem; border-color: oklch(var(--bc) / 0.1); box-shadow: 1px 0 6px rgb(15 23 42 / 0.035); }
+  .studio-right-panel { background: oklch(var(--b1)); border-left: 1px solid oklch(var(--bc) / 0.1); }
   .studio-topbar :global(.dropdown-content) { max-height: calc(100dvh - 7rem); overflow-y: auto; flex-wrap: nowrap; }
   .studio-actions :global(.dropdown-content) { left: 0; right: auto; }
   .studio-document { min-width: 0; }

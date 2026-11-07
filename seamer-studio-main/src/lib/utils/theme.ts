@@ -1,16 +1,8 @@
-// Shared light/dark theme detection, driven by DaisyUI's `data-theme` on <html> (the source's
-// convention), falling back to the OS `prefers-color-scheme`. The 2D and 3D canvases use this so they
-// follow whatever theme the app is in.
+// Shared light/dark theme detection, driven by DaisyUI's `data-theme` on <html>.
 
 export type AppTheme = 'light' | 'dark';
 
 const STORAGE_KEY = 'theme';
-
-function systemTheme(): AppTheme {
-  return typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-color-scheme: dark)').matches
-    ? 'dark'
-    : 'light';
-}
 
 export function setTheme(theme: AppTheme, persist = true): AppTheme {
   if (typeof document === 'undefined') return theme;
@@ -46,12 +38,12 @@ export function toggleTheme(): 'light' | 'dark' {
   return setTheme(next);
 }
 
-/** Apply the persisted theme, or the OS preference on a first visit. */
+/** Apply the saved theme, defaulting to light on a first visit. */
 export function applyStoredTheme(): AppTheme {
   if (typeof document === 'undefined') return 'light';
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === 'dark' || stored === 'light') return setTheme(stored, false);
   } catch { /* ignore */ }
-  return setTheme(systemTheme(), false);
+  return setTheme('light', false);
 }

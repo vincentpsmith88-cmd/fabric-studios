@@ -22,6 +22,9 @@
   {/each}
 </div>
 <style>
-  .sidebar-tabs { display:flex; flex-wrap:wrap; gap:0.25rem; padding:0.25rem; }
+  .sidebar-tabs { display:flex; flex-wrap:wrap; gap:0.3rem; padding:0.55rem; background: oklch(var(--b2) / 0.72); border-bottom: 1px solid oklch(var(--bc) / 0.08); }
+  .sidebar-tabs :global([role="tab"]) { min-height:2rem; border:1px solid transparent; border-radius:0.6rem; color: oklch(var(--bc) / 0.72); transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease; }
+  .sidebar-tabs :global([role="tab"]:hover) { background: oklch(var(--b1)); color: oklch(var(--bc)); }
+  .sidebar-tabs :global([role="tab"][aria-selected="true"]) { background: oklch(var(--b1)); color: oklch(var(--p)); border-color: oklch(var(--p) / 0.2); box-shadow: 0 1px 3px rgb(15 23 42 / 0.08); }
   @media(max-width:1023px) { .sidebar-tabs button { min-height:44px; } }
 </style>

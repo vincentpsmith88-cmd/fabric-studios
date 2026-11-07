@@ -123,12 +123,13 @@ describe('production Scene3D frozen read-only publication (CPU, no device)', () 
   it('rejects an already pending requestDevice initialization without issuing a device-free diagnostic receipt', async () => {
     const f = await rig();let release!: (value: GPUDevice | null) => void;
     vi.spyOn(atelierSim, 'requestDevice').mockImplementation(() => new Promise<GPUDevice | null>(resolve => { release = resolve; }));
+    vi.spyOn(atelierSim, 'webgpuUnavailableReason').mockReturnValue('No suitable WebGPU adapter was found.');
     const internals = f.renderer as unknown as { ensureSim(): Promise<unknown>; simulationInitializations: number };
     const initializing = internals.ensureSim();
     expect(internals.simulationInitializations).toBe(1);
     await expect(f.renderer.presentFrozenCheckpoint(await f.request())).rejects.toThrow('fresh');
     expect(f.pins).not.toHaveBeenCalled();release(null);
-    await expect(initializing).rejects.toThrow('WebGPU is unavailable');expect(internals.simulationInitializations).toBe(0);
+    await expect(initializing).rejects.toThrow('No suitable WebGPU adapter was found.');expect(internals.simulationInitializations).toBe(0);
   });
   it('rechecks actual solver/device absence immediately before publishing after async hashing', async () => {
     const f = await rig();let release!:()=>void;

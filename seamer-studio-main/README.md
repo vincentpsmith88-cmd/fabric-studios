@@ -9,6 +9,8 @@ XPBD cloth simulation, application UI, server routes, and product pages.
 
 The current Studio includes Draft/Fit/Appearance/Production/Cutting tasks, accessible sidebar navigation, configurable pane docking and detached browser panes. Compact landscape places all five tasks in More with 44px touch targets; other desktop and portrait layouts retain the taskbar. Direct artwork editing, structured vector motifs, repeat/zone/ink treatments, named colorways and appearance versions use actual document geometry and mesh UVs. Linked mirrors follow source/axis edits, show dependency warnings and offer Detach; an invalid axis can be restored through drafting or undo.
 
+Opening `/studio` without a document starts with a blank pattern; examples remain available from the Pattern Library. New installs use the light theme unless a theme preference is saved. The SVG importer accepts multiple files and combines their cut outlines as separate, spaced pieces; define seam connections in the Seams panel before draping them together in 3D.
+
 Production supports unit-aware grade rules, body-chart/ease mapping, captured mesh measurements, stale approvals, validated true-shape-marker consumption and dated exchange quotes. Tech Pack downloads include generated PDF/XLSX, HTML/CSV, actual construction views and freshly rendered flat variant mockups. Fabric libraries include collections, physical-criteria ranking, real configured catalog import and piece-targeted drops; range plans preserve style, size, colorway and budget records.
 
 Starting simulation, 3D downloads and garment captures wait for completed preparation of the current document. Pause remains available during an active simulation. Pending SSP capture retains existing checkpoints; asynchronous exports reject a changed source document.
@@ -552,5 +554,5 @@ are recorded in [the comparison](docs/fabra-comparison.md#current-completion-tra
 - The duplicate `src/lib/commands/` layer (11 files, 2103 LOC) deleted; its
   reducers merged into `@seamer/pattern-model`.
 - DXF, CSV, PDF, HPGL, PNG, print and cut-file paths migrated to `@atelier/io`.
-- SVG import added (`SvgImportDialog` + `fromSVG`).
+- SVG import supports multi-file garment-piece assembly (`SvgImportDialog` + `fromSVG`).
 - Five commands added to match the original production registry.

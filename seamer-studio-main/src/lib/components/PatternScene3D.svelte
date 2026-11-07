@@ -12,6 +12,7 @@
     type Pattern,
     type SeamPick
   } from '@seamer/pattern-model';
+  import { webgpuUnavailableReason } from '@atelier/sim';
   import { PatternRenderer, type DrapeDebugState, type DrapeFailureDiagnostics, type RendererStatus, type SceneMode } from '$lib/scene/scene3d';
   import type { FrozenAppRenderRequest, FrozenAppRenderReceipt } from '$lib/scene/frozenAppRender';
   import { compatibleSourceBodyCheckpoint } from '$lib/scene/sourceBodyCheckpoint';
@@ -193,6 +194,7 @@
   let refinedReassemblyNotice = $state(false);
   let status = $state<RendererStatus>('idle');
   let statusMessage = $state('');
+  let webgpuReason = $state<string | null>(null);
   let poses = $state<string[]>([]);
   let currentPose = $state('');
   let webgpu = $state(true);
@@ -310,8 +312,16 @@
       target.__seamerWebgpuDrape = drapeDebugApi;
     }
     webgpu = renderer.webgpuAvailable();
+    webgpuReason = webgpu ? null : webgpuUnavailableReason();
     renderer.onStatus = (s, msg) => {
       status = s; statusMessage = msg ?? '';
+      if (s === 'error' && msg?.toLowerCase().includes('webgpu')) {
+        webgpu = false;
+        webgpuReason = msg;
+      } else if (s === 'simulating') {
+        webgpu = true;
+        webgpuReason = null;
+      }
       refinedReassemblyNotice = !!renderer?.getSourceGatherCacheMarker();
       if (s === 'ready' || s === 'simulating') syncSimulationControls();
       if (s === 'ready') {
@@ -956,9 +966,10 @@
     </div>
   {/if}
 
-  {#if !webgpu}
-    <div class="absolute top-2 left-1/2 -translate-x-1/2 z-10 bg-warning text-warning-content text-xs rounded px-3 py-1 shadow">
-      WebGPU not available — avatar shown, but live draping needs Chrome/Edge.
+  {#if !webgpu && status !== 'error'}
+    <div class="absolute top-2 left-1/2 -translate-x-1/2 z-10 bg-warning text-warning-content text-xs rounded px-3 py-2 shadow max-w-md text-center" role="status" aria-live="polite">
+      WebGPU unavailable{webgpuReason ? `: ${webgpuReason}` : '.'}
+      Live draping needs a current Chrome or Edge on HTTPS or localhost with hardware acceleration enabled. Reload after changing browser settings.
     </div>
   {/if}
   {#if status === 'error'}

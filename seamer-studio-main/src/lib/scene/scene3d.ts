@@ -30,7 +30,7 @@ import { prepareCloth, fromArrangement, ClothSimulation, ClothCollisionGuard, Co
 import { SIM_CONFIG, applySourceContactPolicy, type SimConfig, type SourceContactConfigOptions } from '@seamer/cloth-sim';
 import { cylinderRefit } from '@seamer/cloth-sim';
 import { toOBJ, toSTL } from '@atelier/io/three';
-import { SolverRunner, requestDevice, isWebGPUAvailable } from '@atelier/sim';
+import { SolverRunner, requestDevice, isWebGPUAvailable, webgpuUnavailableReason } from '@atelier/sim';
 import {
   recordAssembly,
   type AssemblyRecording,
@@ -2061,7 +2061,7 @@ export class PatternRenderer {
       }
       if (!preparationStillCurrent(token, current())) return null;
       if (this.sim) return this.sim;
-      if (!this.device) throw new Error('WebGPU is unavailable');
+      if (!this.device) throw new Error(webgpuUnavailableReason() ?? 'No suitable WebGPU device could be acquired.');
       let seed = seedFromArrangement ? fromArrangement(token.prepared) : token.prepared;
       if (seed.simData.sourceGatherRefinement) {
         const simData = await finalizeSourceGatherCollisionGeometry(seed.simData);
